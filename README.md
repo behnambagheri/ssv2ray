@@ -36,22 +36,34 @@ ansible-galaxy collection install ansible.posix
 ansible-galaxy collection install community.docker
 
 before run playbook you must edit inventory file:
+
   ansible_host: IP_ADDRESS
+
   ansible_port: 22
+
   ansible_user: USER
+
   ansible_ssh_private_key_file: PRIVATE_KEY
+
   ansible_ssh_public_key_file: PUBLIC_KEY
+
   ansible_become: true
+
   ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
   ansible_ssh_pass: SSH_PASSWORD
 
   personal_user: PERSONAL_USER
+
   personal_user_comment: "FULL NAME"
+
   personal_ssh_public_key_file: PERSONAL_PUBLIC_KEY
+
 
   project_name: PROJECT_NAME
 
   sshd_config_file: ./files/sshd_config
+
   nginx_config_file: ./files/nginx.conf
 
   domain_name: DOMAIN_NAME
@@ -60,4 +72,5 @@ before run playbook you must edit inventory file:
 
 
 Run playbook with:
+
 ansible-playbook -i inventory.yml full-config.yml  
