@@ -1,0 +1,10 @@
+{
+      "server": "DOMAIN_NAME",
+      "server_port": 443,
+      "local_port":"1080",
+      "local_address":"0.0.0.0",
+      "password": "SHADOWSOCKS_PASSWORD",
+      "method": "chacha20-ietf-poly1305",
+      "plugin": "v2ray-plugin",
+      "plugin_opts": "tls;host=DOMAIN_NAME"
+    }

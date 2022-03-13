@@ -1,0 +1,4 @@
+#!/bin/bash
+
+#Run
+/usr/local/bin/go-shadowsocks2 -s "ss://AEAD_CHACHA20_POLY1305:$SS_PASS@:443" -plugin /usr/local/bin/v2ray-plugin -plugin-opts "server"

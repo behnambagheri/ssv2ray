@@ -1,0 +1,277 @@
+---
+- name: ss+v2ray Install requirement packages.
+  hosts: all
+  tasks:
+  ###   install-packages.yml    ###
+  #Package tasks:
+  - name: "Upgrade all packages."
+    yum:
+      name: "*"
+      state: "latest"
+  - name:
+    get_url:
+      url: "https://download.docker.com/linux/centos/docker-ce.repo"
+      dest: "/etc/yum.repos.d/docker-ce.repo"
+  - name: "Install requirement packages."
+    yum:
+      name:
+        - epel-release
+        - vim
+        - git
+        - wget
+        - firewalld
+        - docker-ce
+        - docker-ce-cli
+        - nmap
+        - bash-completion
+        - https://repo.ius.io/ius-release-el7.rpm
+      state: "present"
+  - name: "Install epel packages."
+    yum:
+      name:
+        - glances
+        - htop
+        - nginx
+        - certbot-nginx
+        - python-pip
+      state: "present"
+  #Package tasks:
+  - name: "Upgrade all packages."
+    yum:
+      name: "*"
+      state: "latest"
+  - name: "Install python3.6"
+    yum:
+      name:
+        - python36u
+        - python36u-libs
+        - python36u-devel
+        - python36u-pip
+      state: "present"
+  #Services task:
+  - name: "enable and Start firewalld services"
+    service:
+      name: firewalld
+      state: started
+      enabled: yes
+  - name: "enable and Start docker services"
+    service:
+      name: docker
+      state: started
+      enabled: yes
+  - name: "enable and Start nginx services"
+    service:
+      name: nginx
+      state: started
+      enabled: yes
+  - name: "Restart sshd services"
+    service:
+      name: sshd
+      state: restarted
+      enabled: yes
+
+  ###   initial.yml   ###
+  # Create Users:
+  - name: Create personal user accounts.
+    user:
+      name: '{{ personal_user }}'
+      comment: '{{ personal_user_comment }}'
+      shell: "/bin/bash"
+      groups: "wheel"
+  - name: Create ansible user accounts.
+    user:
+      name: '{{ ansible_user }}'
+      comment: "Ansible Management"
+      shell: "/bin/bash"
+      groups: "wheel"
+  - name: Create {{ project_name }} user accounts.
+    user:
+      name: '{{ project_name }}'
+      comment: "shadowsocks+v2ray user account for deploy codes"
+      shell: "/bin/bash"
+      groups: "docker"
+  #add ssh keys
+  - name: "Add authorized keys for behnam bagheri"
+    authorized_key:
+      user: '{{ personal_user }}'
+      state: "present"
+      key: "{{ lookup('file', '{{ personal_ssh_public_key_file }}') }}"
+  - name: "Add authorized keys for ansible.management"
+    authorized_key:
+      user: '{{ ansible_user }}'
+      state: "present"
+      key: "{{ lookup('file', '{{ ansible_ssh_public_key_file }}') }}"
+  #set NOPASSWD
+  - name: "Allow admin users to sudo without a password"
+    lineinfile:
+      dest: "/etc/sudoers"
+      state: "present"
+      regexp: "^%wheel"
+      line: "%wheel ALL=(ALL) NOPASSWD: ALL"
+  #Package tasks:
+  - name: "Upgrade all packages."
+    yum:
+      name: "*"
+      state: "latest"
+  #SSH Config
+  - name:
+    copy:
+      src: '{{ sshd_config_file }}'
+      dest: /etc/ssh/sshd_config
+      owner: root
+      group: root
+      mode: u+rw
+      backup: yes
+  - name: Replace {{ personal_user }} in sshd_config
+    replace:
+      path: /etc/ssh/sshd_config
+      regexp: 'PERSONAL_USER'
+      replace: '{{ personal_user }}'
+  - name: Replace {{ ansible_user }} in sshd_config
+    replace:
+      path: /etc/ssh/sshd_config
+      regexp: 'ANSIBLE_USER'
+      replace: '{{ ansible_user }}'
+  #Services task:
+  - name: "Restart sshd services"
+    service:
+      name: sshd
+      state: restarted
+      enabled: yes
+
+  ###   build-docker-image.yml    ###
+  - name: Install Docker api
+    command: pip3.6 install docker
+  #Create directory if it does not exist
+  - name: Create Directories
+    file:
+      path: '/home/{{ project_name }}/{{ project_name }}'
+      state: directory
+      owner: '{{ project_name }}'
+      group: '{{ project_name }}'
+  #Copy requirement files
+  - name:
+    copy:
+      src: ./files/{{ item }}
+      dest: '/home/{{ project_name }}/{{ project_name }}/'
+      owner: '{{ project_name }}'
+      group: docker
+      mode: u=rwx,g=rwx,o=rwx
+      backup: yes
+    with_items:
+       - Dockerfile
+       - go-shadowsocks2
+       - v2ray-plugin
+       - ssv2ray
+       - config.json
+  - name: replace SS_PASS in dockerfile
+    replace:
+      path: '/home/{{ project_name }}/{{ project_name }}/Dockerfile'
+      regexp: 'SHADOWSOCKS_PASSWORD'
+      replace: '{{ SHADOWSOCKS_PASSWORD }}'
+  - name: build the image
+    community.docker.docker_image:
+      build:
+        path: '/home/{{ project_name }}/{{ project_name }}/'
+      name: '{{ project_name }}'
+      tag: v1
+      state: present
+      source: build
+    vars:
+      ansible_python_interpreter: /usr/bin/python3
+
+  ###   run-docker-container.yml    ###
+  - name: 'run {{ project_name }} container'
+    docker_container:
+      state: started
+      restart_policy: always
+      restart: yes
+      privileged: yes
+      name: '{{ project_name }}'
+      image: '{{ project_name }}:v1'
+      ports:
+        - "127.0.0.1:444:443"
+    vars:
+      ansible_python_interpreter: /usr/bin/python3
+
+  ###   nginx-config.yml    ###
+  - name: permit http and https traffic in public zone
+    ansible.posix.firewalld:
+      service: "{{ item }}"
+      permanent: yes
+      zone: public
+      state: enabled
+      immediate: yes
+    with_items:
+      - "http"
+      - "https"
+  - name: Copy nginx configs.
+    copy:
+      src: '{{ nginx_config_file }}'
+      dest: '/etc/nginx/conf.d/{{ project_name }}.conf'
+      owner: root
+      group: root
+      mode: u=rw,g=r,o=r
+      backup: yes
+  - name: replace domain name NGINX.CONF
+    replace:
+      path: '/etc/nginx/conf.d/{{ project_name }}.conf'
+      regexp: 'DOMAIN_NAME'
+      replace: '{{ domain_name }}'
+  - name: replace project name NGINX.CONF
+    replace:
+      path: '/etc/nginx/conf.d/{{ project_name }}.conf'
+      regexp: 'PROJECT_NAME'
+      replace: '{{ project_name }}'
+  - name: Change selinux mode for httpd_t
+    command: semanage permissive -a httpd_t
+
+  - name: create log directory
+    file:
+      path: '/var/log/{{ project_name }}/'
+      state: directory
+      owner: '{{ project_name }}'
+      group: '{{ project_name }}'
+      mode: u=rwx,g=rw
+  - name: Restart nginx service.
+    service:
+      name: nginx
+      state: restarted
+      enabled: yes
+  - name: get ssl from letsencrypt
+    service:
+      name: nginx
+      state: stopped
+  - name:
+    command: 'certbot certonly --standalone --dry-run -d {{ domain_name }} --agree-tos -m it@it.it'
+    vars:
+      ansible_python_interpreter: /usr/bin/python3.6
+  - name:
+    service:
+      name: nginx
+      state: started
+      enabled: yes
+  - name:
+    command: 'certbot --nginx -d {{ domain_name }} --non-interactive --agree-tos -m it@it.it'
+    vars:
+      ansible_python_interpreter: /usr/bin/python3.6
+
+  - name: Generate config file
+    replace:
+      path: '/home/{{ project_name }}/{{ project_name }}/config.json'
+      regexp: 'DOMAIN_NAME'
+      replace: '{{ domain_name }}'
+  - name:
+    replace:
+      path: '/home/{{ project_name }}/{{ project_name }}/config.json'
+      regexp: 'SHADOWSOCKS_PASSWORD'
+      replace: '{{ SHADOWSOCKS_PASSWORD }}'
+  - name: Config file
+    command: 'cat /home/{{ project_name }}/{{ project_name }}/config.json'
+    register: config_output
+  - name:
+    debug:
+      msg: '{{ config_output.stdout }}'
+
+...
+
